@@ -3,6 +3,7 @@ target/
 /ims.db
 /ims.db-shm
 /ims.db-wal
+/group_management.db*
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
