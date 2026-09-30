@@ -1,28 +1,14 @@
 package com.example.groupmanagement;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
+import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.builder.SpringApplicationBuilder;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.stereotype.Controller;
 import org.springframework.stereotype.Repository;
 import org.springframework.ui.Model;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.time.LocalDateTime;
@@ -32,24 +18,14 @@ import java.util.Optional;
 @SpringBootApplication
 public class GroupManagementApplication {
     public static void main(String[] args) {
-        new SpringApplicationBuilder(GroupManagementApplication.class)
-                .profiles("group-management")
-                .run(args);
-    }
-}
-
-@Configuration
-class GroupManagementSecurityConfiguration {
-    @Bean
-    SecurityFilterChain groupManagementSecurityFilterChain(HttpSecurity http) throws Exception {
-        return http.authorizeHttpRequests(requests -> requests.anyRequest().permitAll())
-                .build();
+        SpringApplication.run(GroupManagementApplication.class, args);
     }
 }
 
 @Entity
 @Table(name = "customer_group")
 class GroupModel {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "group_id")
@@ -104,7 +80,7 @@ interface GroupRepository extends JpaRepository<GroupModel, Integer> {
 class GroupController {
     private final GroupRepository groupRepository;
 
-    GroupController(GroupRepository groupRepository) {
+    public GroupController(GroupRepository groupRepository) {
         this.groupRepository = groupRepository;
     }
 
@@ -123,11 +99,13 @@ class GroupController {
 
     @PostMapping("/add")
     public String addGroup(@RequestParam("groupName") String groupName, RedirectAttributes redirectAttributes) {
-        String trimmedName = groupName == null ? "" : groupName.trim();
+        String trimmedName = groupName != null ? groupName.trim() : "";
+
         if (trimmedName.isEmpty()) {
             redirectAttributes.addFlashAttribute("error", "Group name cannot be blank!");
             return "redirect:/add";
         }
+
         if (groupRepository.findByGroupNameIgnoreCase(trimmedName).isPresent()) {
             redirectAttributes.addFlashAttribute("error", "This group name already exists. Use a unique name!");
             return "redirect:/add";
@@ -137,25 +115,26 @@ class GroupController {
         group.setGroupName(trimmedName);
         group.setIsActive(true);
         groupRepository.save(group);
+
         redirectAttributes.addFlashAttribute("success", "Group added successfully!");
         return "redirect:/";
     }
 
     @GetMapping("/edit/{id}")
     public String editGroupForm(@PathVariable("id") Integer id, Model model, RedirectAttributes redirectAttributes) {
-        Optional<GroupModel> group = groupRepository.findById(id);
-        if (group.isEmpty()) {
+        Optional<GroupModel> groupOpt = groupRepository.findById(id);
+        if (groupOpt.isEmpty()) {
             redirectAttributes.addFlashAttribute("error", "Group not found!");
             return "redirect:/";
         }
-        model.addAttribute("group", group.get());
+        model.addAttribute("group", groupOpt.get());
         return "edit_group";
     }
 
     @PostMapping("/edit/{id}")
-    public String editGroup(@PathVariable("id") Integer id, @RequestParam("groupName") String groupName,
-                            RedirectAttributes redirectAttributes) {
-        String trimmedName = groupName == null ? "" : groupName.trim();
+    public String editGroup(@PathVariable("id") Integer id, @RequestParam("groupName") String groupName, RedirectAttributes redirectAttributes) {
+        String trimmedName = groupName != null ? groupName.trim() : "";
+
         if (trimmedName.isEmpty()) {
             redirectAttributes.addFlashAttribute("error", "Group name cannot be blank!");
             return "redirect:/edit/" + id;
@@ -167,21 +146,24 @@ class GroupController {
             return "redirect:/edit/" + id;
         }
 
-        Optional<GroupModel> group = groupRepository.findById(id);
-        if (group.isPresent()) {
-            group.get().setGroupName(trimmedName);
-            groupRepository.save(group.get());
+        Optional<GroupModel> groupOpt = groupRepository.findById(id);
+        if (groupOpt.isPresent()) {
+            GroupModel group = groupOpt.get();
+            group.setGroupName(trimmedName);
+            groupRepository.save(group);
             redirectAttributes.addFlashAttribute("success", "Group updated successfully!");
         }
+
         return "redirect:/";
     }
 
     @PostMapping("/delete/{id}")
     public String deleteGroup(@PathVariable("id") Integer id, RedirectAttributes redirectAttributes) {
-        Optional<GroupModel> group = groupRepository.findById(id);
-        if (group.isPresent()) {
-            group.get().setIsActive(false);
-            groupRepository.save(group.get());
+        Optional<GroupModel> groupOpt = groupRepository.findById(id);
+        if (groupOpt.isPresent()) {
+            GroupModel group = groupOpt.get();
+            group.setIsActive(false);
+            groupRepository.save(group);
             redirectAttributes.addFlashAttribute("success", "Group deactivated successfully!");
         }
         return "redirect:/";

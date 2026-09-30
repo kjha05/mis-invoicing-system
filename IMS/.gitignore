@@ -1,12 +1,4 @@
-target/
 HELP.md
-ims.db
-ims.db-shm
-ims.db-wal
-Task 2/target/
-Task 2/.mvn/wrapper/maven-wrapper.jar
-Task 2/group_management.db-shm
-Task 2/group_management.db-walHELP.md
 target/
 /ims.db
 /ims.db-shm

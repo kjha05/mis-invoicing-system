@@ -21,11 +21,22 @@
         <h1>Group Management</h1>
         <a class="button" th:href="@{/add}">Add New Group</a>
     </div>
+
     <div th:if="${success}" class="alert success" th:text="${success}"></div>
     <div th:if="${error}" class="alert error" th:text="${error}"></div>
+
     <p>Total Active Groups: <strong th:text="${totalGroups}">0</strong></p>
+
     <table>
-        <thead><tr><th>ID</th><th>Name</th><th>Created</th><th>Updated</th><th>Actions</th></tr></thead>
+        <thead>
+        <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Created</th>
+            <th>Updated</th>
+            <th>Actions</th>
+        </tr>
+        </thead>
         <tbody>
         <tr th:each="group : ${groups}">
             <td th:text="${group.groupId}">1</td>
@@ -35,7 +46,6 @@
             <td>
                 <a th:href="@{'/edit/' + ${group.groupId}}">Edit</a>
                 <form th:action="@{'/delete/' + ${group.groupId}}" method="post" style="display:inline;">
-                    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
                     <button type="submit" onclick="return confirm('Deactivate this group?')">Delete</button>
                 </form>
             </td>

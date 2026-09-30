@@ -1,0 +1,4 @@
+target/
+.mvn/wrapper/maven-wrapper.jar
+group_management.db-shm
+group_management.db-wal
