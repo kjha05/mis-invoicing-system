@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: group-management
+    runtime: docker
+    plan: free
+    rootDir: Task 2
+    dockerfilePath: ./Task 2/Dockerfile
+    dockerContext: ./Task 2
+    healthCheckPath: /
