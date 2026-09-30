@@ -1,8 +1,15 @@
 services:
   - type: web
+    name: ims
+    runtime: docker
+    plan: free
+    dockerfilePath: ./IMS/Dockerfile
+    dockerContext: ./IMS
+    healthCheckPath: /
+  - type: web
     name: group-management
     runtime: docker
     plan: free
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
+    dockerfilePath: ./Task 2/Dockerfile
+    dockerContext: ./Task 2
     healthCheckPath: /
