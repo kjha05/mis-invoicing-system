@@ -627,7 +627,8 @@ class ImsController {
                 html.append("<tr><td>").append(escape(item.getGroupName())).append("</td><td>").append(escape(item.getChainName()))
                         .append("</td><td>").append(escape(item.getBrandName())).append("</td><td>").append(escape(item.getSubZone())).append("</td></tr>");
             }
-            html.append("</table></div></section><section><h2>Customer groups</h2><p><a href='/groups'>Open group management</a></p></section><section><h2>Invoices</h2><form class='entry' action='/add-invoice' method='post'>").append(csrfField(csrf))
+            html.append("</table></div></section>");
+            html.append("<section><h2>Invoices</h2><form class='entry' action='/add-invoice' method='post'>").append(csrfField(csrf))
                     .append("<input name='clientName' placeholder='Client name' required><input type='number' min='0.01' step='0.01' name='amount' placeholder='Taxable amount (INR)' required>")
                     .append(gstOptions()).append("<select name='status'><option>Pending</option><option>Paid</option><option>Partial</option></select><input name='paymentMethod' placeholder='Payment method'><input name='paymentReference' placeholder='Payment reference'><button>Create invoice</button></form>")
                     .append("<div class='table-wrap'><table><tr><th>Client</th><th>Taxable</th><th>GST</th><th>Total</th><th>Payment</th>");
