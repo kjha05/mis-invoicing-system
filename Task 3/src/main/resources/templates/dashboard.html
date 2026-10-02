@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Group Management</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 30px; background: #f6f7f9; }
+        .container { max-width: 900px; margin: auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; }
+        .button { background: #0b6e4f; color: white; padding: 10px 15px; text-decoration: none; border-radius: 6px; }
+        table { width: 100%; border-collapse: collapse; background: white; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        .alert { padding: 10px; margin: 10px 0; border-radius: 4px; }
+        .success { background: #dff0d8; color: #3c763d; }
+        .error { background: #f2dede; color: #a94442; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>Group Management</h1>
+        <a class="button" th:href="@{/add}">Add New Group</a>
+    </div>
+
+    <div th:if="${success}" class="alert success" th:text="${success}"></div>
+    <div th:if="${error}" class="alert error" th:text="${error}"></div>
+
+    <p>Total Active Groups: <strong th:text="${totalGroups}">0</strong></p>
+
+    <table>
+        <thead>
+        <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Created</th>
+            <th>Updated</th>
+            <th>Actions</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="group : ${groups}">
+            <td th:text="${group.groupId}">1</td>
+            <td th:text="${group.groupName}">Group</td>
+            <td th:text="${#temporals.format(group.createdAt, 'yyyy-MM-dd HH:mm')}">-</td>
+            <td th:text="${#temporals.format(group.updatedAt, 'yyyy-MM-dd HH:mm')}">-</td>
+            <td>
+                <a th:href="@{'/edit/' + ${group.groupId}}">Edit</a>
+                <form th:action="@{'/delete/' + ${group.groupId}}" method="post" style="display:inline;">
+                    <button type="submit" onclick="return confirm('Deactivate this group?')">Delete</button>
+                </form>
+            </td>
+        </tr>
+        </tbody>
+    </table>
+</div>
+</body>
+</html>

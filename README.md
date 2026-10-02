@@ -1,6 +1,6 @@
 # Projects
 
-This repository contains two independent Spring Boot applications.
+This repository contains three independent Spring Boot applications.
 
 ## IMS
 
@@ -22,8 +22,18 @@ From the `Task 2` directory, run:
 
 The Group Management app uses port 8082 and the repository includes its `group_management.db` database.
 
+## Task 3: Group Management
+
+Task 3 is a separate copy of the Group Management app. From the `Task 3` directory, run:
+
+```powershell
+.\mvnw.cmd spring-boot:run
+```
+
+The Task 3 app uses port 8082 by default. When deployed on Render, it uses the port supplied by Render.
+
 ## Deploy on Render
 
-Create or sync a Blueprint from this repository and select the `main` branch. The root `render.yaml` creates two independent web services: `ims` builds from `IMS/`, and `group-management` builds from `Task 2/`. Each service gets its own Render URL, so deploying one does not replace the app served by the other's URL. Copy each URL from its corresponding service in the Render dashboard.
+Create or sync a Blueprint from this repository and select the `main` branch. The root `render.yaml` creates three independent web services: `ims` builds from `IMS/`, `group-management` builds from `Task 2/`, and `task-3-group-management` builds from `Task 3/`. Each service gets its own Render URL, so deploying one does not replace the app served by another. Copy each URL from its corresponding service in the Render dashboard.
 
-The included SQLite database seeds the deployed app, but Render's free filesystem is temporary. Changes made to groups can be lost when the service restarts or redeploys. The Group Management routes also have no login, so add authentication before using this publicly with sensitive data.
+The included SQLite database seeds the Task 2 app, but Render's free filesystem is temporary. Changes made to groups can be lost when the service restarts or redeploys. The Group Management routes also have no login, so add authentication before using this publicly with sensitive data.

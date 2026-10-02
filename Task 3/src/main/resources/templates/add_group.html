@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Add Group</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 30px; background: #f6f7f9; }
+        .container { max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 8px; }
+        label { display: block; margin-top: 12px; }
+        input { width: 100%; padding: 10px; margin-top: 6px; box-sizing: border-box; }
+        button { margin-top: 15px; padding: 10px 15px; background: #0b6e4f; color: white; border: none; border-radius: 6px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Add Group</h1>
+    <div th:if="${error}" style="color: #a94442; margin-bottom: 10px;" th:text="${error}"></div>
+    <form th:action="@{/add}" method="post">
+        <label for="groupName">Group Name</label>
+        <input id="groupName" name="groupName" type="text" required>
+        <button type="submit">Save Group</button>
+    </form>
+    <p><a th:href="@{/}">Back to Dashboard</a></p>
+</div>
+</body>
+</html>
