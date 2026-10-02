@@ -20,6 +20,10 @@ After signing in to IMS, use **Manage brands** from the dashboard or open `/bran
 
 After signing in to IMS, use **Manage zones** from the dashboard or open `/zones`. The zone dashboard shows active group, company/chain, brand, and zone counts; supports filtering by group, company, or brand; and provides add, edit, and soft-delete actions for zones. Each zone is linked to a brand and stores creation/update timestamps.
 
+### Task 6: Sales Estimate Management
+
+After signing in to IMS, open **Sales estimates** from the dashboard or visit `/sales-estimates`. Create estimates for an existing client, company/chain, and zone with service details, quantity, unit cost, and delivery schedule. The estimate stores the selected hierarchy names, links to the client and chain, calculates total cost, and shows estimates with creation/update timestamps.
+
 ## Task 2: Group Management
 
 From the `Task 2` directory, run:

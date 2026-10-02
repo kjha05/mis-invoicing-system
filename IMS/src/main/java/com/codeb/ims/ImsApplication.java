@@ -45,6 +45,9 @@ import org.springframework.web.bind.annotation.ResponseBody;
     import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
     import java.util.Locale;
     import java.util.Optional;
@@ -386,6 +389,92 @@ class Estimate {
 }
 
 @Entity
+@Table(name = "sales_estimates")
+class SalesEstimate {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "estimated_id")
+    private Long estimatedId;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "client_id", nullable = false)
+    private Client client;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "chain_id", nullable = false)
+    private CompanyChain chain;
+
+    @Column(name = "group_name", nullable = false, length = 50)
+    private String groupName;
+
+    @Column(name = "brand_name", nullable = false, length = 50)
+    private String brandName;
+
+    @Column(name = "zone_name", nullable = false, length = 50)
+    private String zoneName;
+
+    @Column(name = "service", nullable = false, length = 100)
+    private String service;
+
+    @Column(name = "qty", nullable = false)
+    private Integer qty;
+
+    @Column(name = "cost_per_unit", nullable = false, precision = 12, scale = 2)
+    private BigDecimal costPerUnit;
+
+    @Column(name = "total_cost", nullable = false, precision = 14, scale = 2)
+    private BigDecimal totalCost;
+
+    @Column(name = "delivery_date", nullable = false)
+    private LocalDate deliveryDate;
+
+    @Column(name = "delivery_details", nullable = false, length = 100)
+    private String deliveryDetails;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        LocalDateTime now = LocalDateTime.now();
+        this.createdAt = now;
+        this.updatedAt = now;
+    }
+
+    @PreUpdate
+    protected void onUpdate() { this.updatedAt = LocalDateTime.now(); }
+
+    public Long getEstimatedId() { return estimatedId; }
+    public Client getClient() { return client; }
+    public void setClient(Client client) { this.client = client; }
+    public CompanyChain getChain() { return chain; }
+    public void setChain(CompanyChain chain) { this.chain = chain; }
+    public String getGroupName() { return groupName; }
+    public void setGroupName(String groupName) { this.groupName = groupName; }
+    public String getBrandName() { return brandName; }
+    public void setBrandName(String brandName) { this.brandName = brandName; }
+    public String getZoneName() { return zoneName; }
+    public void setZoneName(String zoneName) { this.zoneName = zoneName; }
+    public String getService() { return service; }
+    public void setService(String service) { this.service = service; }
+    public Integer getQty() { return qty; }
+    public void setQty(Integer qty) { this.qty = qty; }
+    public BigDecimal getCostPerUnit() { return costPerUnit; }
+    public void setCostPerUnit(BigDecimal costPerUnit) { this.costPerUnit = costPerUnit; }
+    public BigDecimal getTotalCost() { return totalCost; }
+    public void setTotalCost(BigDecimal totalCost) { this.totalCost = totalCost; }
+    public LocalDate getDeliveryDate() { return deliveryDate; }
+    public void setDeliveryDate(LocalDate deliveryDate) { this.deliveryDate = deliveryDate; }
+    public String getDeliveryDetails() { return deliveryDetails; }
+    public void setDeliveryDetails(String deliveryDetails) { this.deliveryDetails = deliveryDetails; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+}
+
+@Entity
 @Table(name = "password_reset_tokens")
 class PasswordResetToken {
     @Id
@@ -491,6 +580,17 @@ interface ZoneRepository extends JpaRepository<Zone, Long> {
                                @Param("groupId") Long groupId);
 }
 
+interface SalesEstimateRepository extends JpaRepository<SalesEstimate, Long> {
+    @Query("""
+            select estimate from SalesEstimate estimate
+            join fetch estimate.client client
+            join fetch estimate.chain chain
+            join fetch chain.group
+            order by estimate.createdAt desc
+            """)
+    List<SalesEstimate> findAllForDashboard();
+}
+
 interface InvoiceRepository extends JpaRepository<Invoice, Long> {}
 
 interface EstimateRepository extends JpaRepository<Estimate, Long> {}
@@ -507,8 +607,9 @@ class ImsService {
         private final CompanyChainRepository companyChainRepository;
         private final BrandRepository brandRepository;
         private final ZoneRepository zoneRepository;
+        private final SalesEstimateRepository salesEstimateRepository;
 
-        public ImsService(ClientRepository clientRepository,
+            public ImsService(ClientRepository clientRepository,
                           HierarchyRepository hierarchyRepository,
                           GroupRepository groupRepository,
                           InvoiceRepository invoiceRepository,
@@ -517,7 +618,8 @@ class ImsService {
                               PasswordEncoder passwordEncoder,
                               CompanyChainRepository companyChainRepository,
                               BrandRepository brandRepository,
-                              ZoneRepository zoneRepository) {
+                              ZoneRepository zoneRepository,
+                              SalesEstimateRepository salesEstimateRepository) {
         this.clientRepository = clientRepository;
         this.hierarchyRepository = hierarchyRepository;
         this.groupRepository = groupRepository;
@@ -528,6 +630,7 @@ class ImsService {
         this.companyChainRepository = companyChainRepository;
         this.brandRepository = brandRepository;
         this.zoneRepository = zoneRepository;
+        this.salesEstimateRepository = salesEstimateRepository;
     }
 
     public List<Client> getAllClients() { return clientRepository.findAll(); }
@@ -687,6 +790,57 @@ class ImsService {
 
     public List<Estimate> getAllEstimates() { return estimateRepository.findAll(); }
     public void saveEstimate(Estimate estimate) { estimateRepository.save(estimate); }
+
+    public List<SalesEstimate> getAllSalesEstimates() {
+        return salesEstimateRepository.findAllForDashboard();
+    }
+
+    @Transactional
+    public SalesEstimate createSalesEstimate(Long clientId, Long chainId, Long zoneId, String service,
+                                             Integer qty, BigDecimal costPerUnit, LocalDate deliveryDate,
+                                             String deliveryDetails) {
+        Client client = clientRepository.findById(clientId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Select a valid client"));
+        CompanyChain chain = companyChainRepository.findById(chainId)
+                .filter(activeChain -> Boolean.TRUE.equals(activeChain.getIsActive()))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Select an active company"));
+        Zone zone = zoneRepository.findById(zoneId)
+                .filter(activeZone -> Boolean.TRUE.equals(activeZone.getIsActive()))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Select an active zone"));
+        Brand brand = zone.getBrand();
+        if (!Boolean.TRUE.equals(brand.getIsActive())
+                || !Boolean.TRUE.equals(brand.getChain().getIsActive())
+                || !Boolean.TRUE.equals(brand.getChain().getGroup().getIsActive())
+                || !brand.getChain().getChainId().equals(chain.getChainId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The selected zone must belong to the selected active company");
+        }
+        String serviceName = requireName(service, 100, "Service");
+        String details = requireName(deliveryDetails, 100, "Delivery details");
+        if (qty == null || qty <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantity must be greater than zero");
+        }
+        if (costPerUnit == null || costPerUnit.signum() < 0 || costPerUnit.stripTrailingZeros().scale() > 2) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cost per unit must be a non-negative amount with up to two decimal places");
+        }
+        if (deliveryDate == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Delivery date is required");
+        }
+
+        BigDecimal normalizedUnitCost = costPerUnit.setScale(2, RoundingMode.UNNECESSARY);
+        SalesEstimate estimate = new SalesEstimate();
+        estimate.setClient(client);
+        estimate.setChain(chain);
+        estimate.setGroupName(requireName(chain.getGroup().getGroupName(), 50, "Group name"));
+        estimate.setBrandName(requireName(brand.getBrandName(), 50, "Brand name"));
+        estimate.setZoneName(requireName(zone.getZoneName(), 50, "Zone name"));
+        estimate.setService(serviceName);
+        estimate.setQty(qty);
+        estimate.setCostPerUnit(normalizedUnitCost);
+        estimate.setTotalCost(normalizedUnitCost.multiply(BigDecimal.valueOf(qty)).setScale(2, RoundingMode.HALF_UP));
+        estimate.setDeliveryDate(deliveryDate);
+        estimate.setDeliveryDetails(details);
+        return salesEstimateRepository.save(estimate);
+    }
 
         public List<User> getAllUsers() { return userRepository.findAll(); }
         public long getActiveUserCount() { return userRepository.countByEnabledTrue(); }
@@ -939,7 +1093,7 @@ class ImsController {
                     """);
             html.append("<header><div><h1>Code-B Internal Management System</h1><small>Signed in as ")
                     .append(escape(authentication.getName())).append(admin ? " · Admin" : " · Employee")
-                    .append("</small></div><nav><a href='/groups'>Customer groups</a> · <a href='/brands'>Manage brands</a> · <a href='/zones'>Manage zones</a></nav><form method='post' action='/logout'>").append(csrfField(csrf))
+                    .append("</small></div><nav><a href='/groups'>Customer groups</a> · <a href='/brands'>Manage brands</a> · <a href='/zones'>Manage zones</a> · <a href='/sales-estimates'>Sales estimates</a></nav><form method='post' action='/logout'>").append(csrfField(csrf))
                     .append("<button class='secondary' type='submit'>Sign out</button></form></header><main>")
                     .append("<div class='stats'><div class='stat'><label>Total clients</label><strong>").append(clients.size())
                     .append("</strong></div><div class='stat'><label>Active users</label><strong>").append(imsService.getActiveUserCount())
@@ -998,6 +1152,85 @@ class ImsController {
             html.append("</table></div></section>");
             if (admin) appendAdminUsers(html, csrf, imsService.getAllUsers());
             return html.append("</main></body></html>").toString();
+        }
+
+        @GetMapping("/sales-estimates")
+        @ResponseBody
+        public String salesEstimatesPage(@RequestParam(required = false) String success, CsrfToken csrf) {
+            List<Client> clients = imsService.getAllClients();
+            List<CompanyChain> chains = imsService.getAllActiveChains();
+            List<Brand> brands = imsService.getActiveBrands(null, null);
+            List<Zone> zones = imsService.getAllZones();
+            List<SalesEstimate> estimates = imsService.getAllSalesEstimates();
+            StringBuilder html = new StringBuilder("""
+                    <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+                    <title>Sales Estimates · Code-B IMS</title><style>
+                    *{box-sizing:border-box}body{margin:0;background:#f3f6f2;color:#17211d;font:15px/1.5 'Segoe UI',sans-serif}
+                    header{background:#17211d;color:white;padding:17px max(20px,calc((100% - 1200px)/2))}header h1{font-size:22px;margin:0}
+                    header a{color:#d8f36a;text-decoration:none}nav{margin-top:5px}main{max-width:1200px;margin:28px auto;padding:0 20px}
+                    section{background:white;border:1px solid #dce4de;padding:18px;margin:16px 0}h2{font-size:18px;margin:0 0 12px}
+                    form.entry{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+                    input,select,button{font:inherit;padding:9px 11px;border:1px solid #c7d2ca;border-radius:4px;background:#fff;color:#17211d}
+                    button{background:#176b4b;border-color:#176b4b;color:white;cursor:pointer;font-weight:600}.table-wrap{overflow:auto}
+                    table{width:100%;border-collapse:collapse;min-width:1250px}th,td{text-align:left;padding:9px 11px;border-bottom:1px solid #dce4de;vertical-align:top}
+                    th{font-size:12px;text-transform:uppercase;color:#65736c;background:#f8faf8}.notice{padding:10px 12px;background:#dff0d8;color:#27632d;border-radius:4px}
+                    .muted{color:#65736c}@media(max-width:800px){form.entry{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){form.entry{grid-template-columns:1fr}main{padding:0 12px}header{padding:15px}}
+                    </style></head><body><header><h1>Estimate Management</h1><nav><a href="/">Dashboard</a> · <a href="/brands">Manage brands</a> · <a href="/zones">Manage zones</a></nav></header><main>
+                    """);
+            if ("estimate-added".equals(success)) html.append("<p class='notice'>Sales estimate saved successfully.</p>");
+            html.append("<section><h2>Create sales estimate</h2>");
+            if (clients.isEmpty() || chains.isEmpty() || brands.isEmpty() || zones.isEmpty()) {
+                html.append("<p class='muted'>Before creating an estimate, add at least one client, active company, brand, and zone. ")
+                        .append("Use the dashboard to add clients, <a href='/brands'>Manage brands</a> for companies and brands, and <a href='/zones'>Manage zones</a> for zones.</p>");
+            } else {
+                html.append("<form class='entry' action='/sales-estimates/add' method='post'>").append(csrfField(csrf))
+                        .append("<select name='clientId' required aria-label='Client'>");
+                appendClientOptions(html, clients);
+                html.append("</select><select name='chainId' required aria-label='Company / chain'>");
+                appendChainOptions(html, chains, null);
+                html.append("</select><select name='zoneId' required aria-label='Zone'>");
+                appendZoneOptions(html, zones);
+                html.append("</select><input name='service' maxlength='100' placeholder='Service details' required>")
+                        .append("<input type='number' name='qty' min='1' step='1' placeholder='Quantity' required>")
+                        .append("<input type='number' name='costPerUnit' min='0' step='0.01' placeholder='Cost per unit' required>")
+                        .append("<input type='date' name='deliveryDate' required>")
+                        .append("<input name='deliveryDetails' maxlength='100' placeholder='Delivery details' required>")
+                        .append("<button type='submit'>Save estimate</button></form>")
+                        .append("<p class='muted'>Brand and group are taken from the selected zone; the selected company must match that zone's brand hierarchy.</p>");
+            }
+            html.append("</section><section><h2>Estimate dashboard</h2><div class='table-wrap'><table><thead><tr>")
+                    .append("<th>ID</th><th>Client</th><th>Company</th><th>Group</th><th>Brand</th><th>Zone</th><th>Service</th><th>Qty</th>")
+                    .append("<th>Cost / unit</th><th>Total cost</th><th>Delivery date</th><th>Delivery details</th><th>Created</th><th>Updated</th>")
+                    .append("</tr></thead><tbody>");
+            for (SalesEstimate estimate : estimates) {
+                html.append("<tr><td>").append(estimate.getEstimatedId()).append("</td><td>")
+                        .append(escape(estimate.getClient().getName())).append("</td><td>")
+                        .append(escape(estimate.getChain().getChainName())).append("</td><td>")
+                        .append(escape(estimate.getGroupName())).append("</td><td>")
+                        .append(escape(estimate.getBrandName())).append("</td><td>")
+                        .append(escape(estimate.getZoneName())).append("</td><td>")
+                        .append(escape(estimate.getService())).append("</td><td>").append(estimate.getQty())
+                        .append("</td><td>").append(money(estimate.getCostPerUnit().doubleValue()))
+                        .append("</td><td>").append(money(estimate.getTotalCost().doubleValue()))
+                        .append("</td><td>").append(estimate.getDeliveryDate())
+                        .append("</td><td>").append(escape(estimate.getDeliveryDetails()))
+                        .append("</td><td>").append(estimate.getCreatedAt())
+                        .append("</td><td>").append(estimate.getUpdatedAt()).append("</td></tr>");
+            }
+            if (estimates.isEmpty()) html.append("<tr><td colspan='14' class='muted'>No sales estimates have been created yet.</td></tr>");
+            html.append("</tbody></table></div></section></main></body></html>");
+            return html.toString();
+        }
+
+        @PostMapping("/sales-estimates/add")
+        public String addSalesEstimate(@RequestParam Long clientId, @RequestParam Long chainId,
+                                       @RequestParam Long zoneId, @RequestParam String service,
+                                       @RequestParam Integer qty, @RequestParam BigDecimal costPerUnit,
+                                       @RequestParam LocalDate deliveryDate,
+                                       @RequestParam String deliveryDetails) {
+            imsService.createSalesEstimate(clientId, chainId, zoneId, service, qty, costPerUnit,
+                    deliveryDate, deliveryDetails);
+            return "redirect:/sales-estimates?success=estimate-added";
         }
 
         @GetMapping("/brands")
@@ -1236,6 +1469,29 @@ class ImsController {
                         .append(escape(brand.getBrandName())).append(" — ")
                         .append(escape(brand.getChain().getChainName())).append(" — ")
                         .append(escape(brand.getChain().getGroup().getGroupName())).append("</option>");
+            }
+        }
+
+        private static void appendClientOptions(StringBuilder html, List<Client> clients) {
+            for (Client client : clients) {
+                html.append("<option value='").append(client.getId()).append("'>")
+                        .append(escape(client.getName()));
+                if (client.getCompany() != null && !client.getCompany().isBlank()) {
+                    html.append(" — ").append(escape(client.getCompany()));
+                }
+                if (client.getEmail() != null && !client.getEmail().isBlank()) {
+                    html.append(" (").append(escape(client.getEmail())).append(")");
+                }
+                html.append("</option>");
+            }
+        }
+
+        private static void appendZoneOptions(StringBuilder html, List<Zone> zones) {
+            for (Zone zone : zones) {
+                html.append("<option value='").append(zone.getZoneId()).append("'>")
+                        .append(escape(zone.getZoneName())).append(" — ")
+                        .append(escape(zone.getBrand().getBrandName())).append(" — ")
+                        .append(escape(zone.getBrand().getChain().getChainName())).append("</option>");
             }
         }
 

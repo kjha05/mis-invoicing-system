@@ -5,11 +5,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.web.csrf.DefaultCsrfToken;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
@@ -26,6 +30,12 @@ class ImsApplicationTests {
 
 	@Autowired
 	private ZoneRepository zoneRepository;
+
+	@Autowired
+	private ClientRepository clientRepository;
+
+	@Autowired
+	private SalesEstimateRepository salesEstimateRepository;
 
 	@Autowired
 	private ImsService imsService;
@@ -133,5 +143,66 @@ class ImsApplicationTests {
 		assertFalse(zoneRepository.findById(zone.getZoneId()).orElseThrow().getIsActive());
 		assertTrue(imsService.getActiveZones(null, null, null).stream()
 				.noneMatch(activeZone -> activeZone.getZoneId().equals(zone.getZoneId())));
+	}
+
+	@Test
+	@Transactional
+	void salesEstimateCapturesClientHierarchyAndCalculatesTotal() {
+		String suffix = UUID.randomUUID().toString();
+		CustomerGroup group = new CustomerGroup();
+		group.setGroupName("Estimate group " + suffix.substring(0, 8));
+		group.setIsActive(true);
+		groupRepository.save(group);
+
+		CompanyChain chain = new CompanyChain();
+		chain.setGroup(group);
+		chain.setChainName("Estimate company " + suffix.substring(0, 8));
+		chain.setIsActive(true);
+		companyChainRepository.save(chain);
+
+		Brand brand = new Brand();
+		brand.setBrandName("Estimate brand " + suffix.substring(0, 8));
+		brand.setChain(chain);
+		brand.setIsActive(true);
+		brandRepository.save(brand);
+
+		Zone zone = new Zone();
+		zone.setZoneName("Estimate zone");
+		zone.setBrand(brand);
+		zone.setIsActive(true);
+		zoneRepository.save(zone);
+
+		Client client = new Client();
+		client.setName("Estimate client");
+		client.setEmail("estimate@example.com");
+		clientRepository.save(client);
+
+		SalesEstimate estimate = imsService.createSalesEstimate(client.getId(), chain.getChainId(),
+				zone.getZoneId(), "Installation service", 3, new BigDecimal("125.50"),
+				LocalDate.of(2026, 12, 15), "Deliver to site");
+		SalesEstimate saved = salesEstimateRepository.findAllForDashboard().stream()
+				.filter(item -> item.getEstimatedId().equals(estimate.getEstimatedId()))
+				.findFirst().orElseThrow();
+
+		assertEquals("Estimate client", saved.getClient().getName());
+		assertEquals(chain.getChainId(), saved.getChain().getChainId());
+		assertEquals(group.getGroupName(), saved.getGroupName());
+		assertEquals(brand.getBrandName(), saved.getBrandName());
+		assertEquals(zone.getZoneName(), saved.getZoneName());
+		assertEquals(new BigDecimal("376.50"), saved.getTotalCost());
+		assertEquals(LocalDate.of(2026, 12, 15), saved.getDeliveryDate());
+		assertTrue(saved.getCreatedAt() != null);
+		assertTrue(saved.getUpdatedAt() != null);
+		assertTrue(imsController.salesEstimatesPage(null,
+				new DefaultCsrfToken("X-CSRF-TOKEN", "_csrf", "test-token")).contains("Installation service"));
+
+		CompanyChain otherChain = new CompanyChain();
+		otherChain.setGroup(group);
+		otherChain.setChainName("Other estimate company " + suffix.substring(0, 8));
+		otherChain.setIsActive(true);
+		companyChainRepository.save(otherChain);
+		assertThrows(ResponseStatusException.class, () -> imsService.createSalesEstimate(client.getId(),
+				otherChain.getChainId(), zone.getZoneId(), "Invalid hierarchy", 1,
+				BigDecimal.ONE, LocalDate.of(2026, 12, 15), "Must be rejected"));
 	}
 }
