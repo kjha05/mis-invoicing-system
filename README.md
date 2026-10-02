@@ -12,6 +12,10 @@ From the `IMS` directory, run:
 
 The IMS app uses port 8080 and its local SQLite database is kept in `IMS/ims.db`.
 
+### Task 4: Manage Brands
+
+After signing in to IMS, use **Manage brands** from the dashboard or open `/brands`. Add companies/chains under active customer groups, then create and edit brands linked by chain ID. The page filters active brands by group or company. Zones can be linked to brands; a brand with one or more linked zones cannot be deactivated. Brand records use soft deletion and keep creation/update timestamps.
+
 ## Task 2: Group Management
 
 From the `Task 2` directory, run:

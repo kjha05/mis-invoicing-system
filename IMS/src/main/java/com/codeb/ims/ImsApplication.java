@@ -8,6 +8,10 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
     import jakarta.persistence.Column;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.UniqueConstraint;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
     import org.springframework.boot.CommandLineRunner;
@@ -15,6 +19,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
     import org.springframework.context.annotation.Bean;
     import org.springframework.context.annotation.Configuration;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
     import org.springframework.security.config.annotation.web.builders.HttpSecurity;
     import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
     import org.springframework.security.core.userdetails.UserDetailsService;
@@ -174,6 +180,118 @@ class CustomerGroup {
 }
 
 @Entity
+@Table(name = "company_chain", uniqueConstraints = @UniqueConstraint(columnNames = {"group_id", "chain_name"}))
+class CompanyChain {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "chain_id")
+    private Long chainId;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "group_id", nullable = false)
+    private CustomerGroup group;
+
+    @Column(name = "chain_name", nullable = false, length = 50)
+    private String chainName;
+
+    @Column(name = "is_active", nullable = false)
+    private Boolean isActive = true;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = this.createdAt;
+        if (this.isActive == null) this.isActive = true;
+    }
+
+    @PreUpdate
+    protected void onUpdate() { this.updatedAt = LocalDateTime.now(); }
+
+    public Long getChainId() { return chainId; }
+    public CustomerGroup getGroup() { return group; }
+    public void setGroup(CustomerGroup group) { this.group = group; }
+    public String getChainName() { return chainName; }
+    public void setChainName(String chainName) { this.chainName = chainName; }
+    public Boolean getIsActive() { return isActive; }
+    public void setIsActive(Boolean isActive) { this.isActive = isActive; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+}
+
+@Entity
+@Table(name = "brand", uniqueConstraints = @UniqueConstraint(columnNames = {"chain_id", "brand_name"}))
+class Brand {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "brand_id")
+    private Long brandId;
+
+    @Column(name = "brand_name", nullable = false, length = 50)
+    private String brandName;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "chain_id", nullable = false)
+    private CompanyChain chain;
+
+    @Column(name = "is_active", nullable = false)
+    private Boolean isActive = true;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = this.createdAt;
+        if (this.isActive == null) this.isActive = true;
+    }
+
+    @PreUpdate
+    protected void onUpdate() { this.updatedAt = LocalDateTime.now(); }
+
+    public Long getBrandId() { return brandId; }
+    public String getBrandName() { return brandName; }
+    public void setBrandName(String brandName) { this.brandName = brandName; }
+    public CompanyChain getChain() { return chain; }
+    public void setChain(CompanyChain chain) { this.chain = chain; }
+    public Boolean getIsActive() { return isActive; }
+    public void setIsActive(Boolean isActive) { this.isActive = isActive; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+}
+
+@Entity
+@Table(name = "zone")
+class Zone {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "zone_id")
+    private Long zoneId;
+
+    @Column(name = "zone_name", nullable = false, length = 100)
+    private String zoneName;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "brand_id", nullable = false)
+    private Brand brand;
+
+    public Long getZoneId() { return zoneId; }
+    public String getZoneName() { return zoneName; }
+    public void setZoneName(String zoneName) { this.zoneName = zoneName; }
+    public Brand getBrand() { return brand; }
+    public void setBrand(Brand brand) { this.brand = brand; }
+}
+
+@Entity
 @Table(name = "invoices")
 class Invoice {
     @Id
@@ -286,6 +404,45 @@ interface GroupRepository extends JpaRepository<CustomerGroup, Long> {
     Optional<CustomerGroup> findByGroupNameIgnoreCase(String groupName);
 }
 
+interface CompanyChainRepository extends JpaRepository<CompanyChain, Long> {
+    @Query("""
+            select c from CompanyChain c
+            join fetch c.group g
+            where c.isActive = true and g.isActive = true
+              and (:groupId is null or g.groupId = :groupId)
+            order by c.chainName
+            """)
+    List<CompanyChain> findActiveChains(@Param("groupId") Long groupId);
+    boolean existsByGroup_GroupIdAndChainNameIgnoreCase(Long groupId, String chainName);
+}
+
+interface BrandRepository extends JpaRepository<Brand, Long> {
+    @Query("""
+            select b from Brand b
+            join fetch b.chain c
+            join fetch c.group g
+            where b.isActive = true and c.isActive = true and g.isActive = true
+              and (:groupId is null or g.groupId = :groupId)
+              and (:chainId is null or c.chainId = :chainId)
+            order by g.groupName, c.chainName, b.brandName
+            """)
+    List<Brand> findActiveBrands(@Param("groupId") Long groupId, @Param("chainId") Long chainId);
+    boolean existsByChain_ChainIdAndBrandNameIgnoreCase(Long chainId, String brandName);
+    boolean existsByChain_ChainIdAndBrandNameIgnoreCaseAndBrandIdNot(Long chainId, String brandName, Long brandId);
+}
+
+interface ZoneRepository extends JpaRepository<Zone, Long> {
+    long countByBrand_BrandId(Long brandId);
+    @Query("""
+            select z from Zone z
+            join fetch z.brand b
+            join fetch b.chain c
+            join fetch c.group
+            order by z.zoneName
+            """)
+    List<Zone> findAllWithBrand();
+}
+
 interface InvoiceRepository extends JpaRepository<Invoice, Long> {}
 
 interface EstimateRepository extends JpaRepository<Estimate, Long> {}
@@ -299,14 +456,20 @@ class ImsService {
     private final EstimateRepository estimateRepository;
         private final UserRepository userRepository;
         private final PasswordEncoder passwordEncoder;
+        private final CompanyChainRepository companyChainRepository;
+        private final BrandRepository brandRepository;
+        private final ZoneRepository zoneRepository;
 
-    public ImsService(ClientRepository clientRepository,
-                      HierarchyRepository hierarchyRepository,
-                      GroupRepository groupRepository,
-                      InvoiceRepository invoiceRepository,
-                          EstimateRepository estimateRepository,
-                          UserRepository userRepository,
-                          PasswordEncoder passwordEncoder) {
+        public ImsService(ClientRepository clientRepository,
+                          HierarchyRepository hierarchyRepository,
+                          GroupRepository groupRepository,
+                          InvoiceRepository invoiceRepository,
+                              EstimateRepository estimateRepository,
+                              UserRepository userRepository,
+                              PasswordEncoder passwordEncoder,
+                              CompanyChainRepository companyChainRepository,
+                              BrandRepository brandRepository,
+                              ZoneRepository zoneRepository) {
         this.clientRepository = clientRepository;
         this.hierarchyRepository = hierarchyRepository;
         this.groupRepository = groupRepository;
@@ -314,6 +477,9 @@ class ImsService {
         this.estimateRepository = estimateRepository;
                 this.userRepository = userRepository;
                 this.passwordEncoder = passwordEncoder;
+        this.companyChainRepository = companyChainRepository;
+        this.brandRepository = brandRepository;
+        this.zoneRepository = zoneRepository;
     }
 
     public List<Client> getAllClients() { return clientRepository.findAll(); }
@@ -341,6 +507,101 @@ class ImsService {
         CustomerGroup group = groupRepository.findById(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         group.setIsActive(false);
         groupRepository.save(group);
+    }
+
+    public List<CompanyChain> getAllActiveChains() {
+        return companyChainRepository.findActiveChains(null);
+    }
+
+    public List<CompanyChain> getActiveChainsByGroup(Long groupId) {
+        return companyChainRepository.findActiveChains(groupId);
+    }
+
+    @Transactional
+    public void createChain(Long groupId, String chainName) {
+        CustomerGroup group = groupRepository.findById(groupId)
+                .filter(customerGroup -> Boolean.TRUE.equals(customerGroup.getIsActive()))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Select an active customer group"));
+        String name = requireName(chainName, 50, "Company name");
+        if (companyChainRepository.existsByGroup_GroupIdAndChainNameIgnoreCase(groupId, name)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "That company already exists in this group");
+        }
+        CompanyChain chain = new CompanyChain();
+        chain.setGroup(group);
+        chain.setChainName(name);
+        chain.setIsActive(true);
+        companyChainRepository.save(chain);
+    }
+
+    public List<Brand> getActiveBrands(Long groupId, Long chainId) {
+        return brandRepository.findActiveBrands(groupId, chainId);
+    }
+
+    @Transactional
+    public void createBrand(String brandName, Long chainId) {
+        CompanyChain chain = companyChainRepository.findById(chainId)
+                .filter(companyChain -> Boolean.TRUE.equals(companyChain.getIsActive()))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Select an active company"));
+        String name = requireName(brandName, 50, "Brand name");
+        if (brandRepository.existsByChain_ChainIdAndBrandNameIgnoreCase(chainId, name)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "That brand already exists for this company");
+        }
+        Brand brand = new Brand();
+        brand.setBrandName(name);
+        brand.setChain(chain);
+        brand.setIsActive(true);
+        brandRepository.save(brand);
+    }
+
+    @Transactional
+    public void updateBrand(Long brandId, String brandName, Long chainId) {
+        Brand brand = brandRepository.findById(brandId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Brand not found"));
+        CompanyChain chain = companyChainRepository.findById(chainId)
+                .filter(companyChain -> Boolean.TRUE.equals(companyChain.getIsActive()))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Select an active company"));
+        String name = requireName(brandName, 50, "Brand name");
+        if (brandRepository.existsByChain_ChainIdAndBrandNameIgnoreCaseAndBrandIdNot(chainId, name, brandId)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "That brand already exists for this company");
+        }
+        brand.setBrandName(name);
+        brand.setChain(chain);
+        brandRepository.save(brand);
+    }
+
+    @Transactional
+    public boolean deactivateBrand(Long brandId) {
+        Brand brand = brandRepository.findById(brandId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Brand not found"));
+        if (zoneRepository.countByBrand_BrandId(brandId) > 0) {
+            return false;
+        }
+        brand.setIsActive(false);
+        brandRepository.save(brand);
+        return true;
+    }
+
+    public List<Zone> getAllZones() {
+        return zoneRepository.findAllWithBrand();
+    }
+
+    @Transactional
+    public void createZone(String zoneName, Long brandId) {
+        Brand brand = brandRepository.findById(brandId)
+                .filter(activeBrand -> Boolean.TRUE.equals(activeBrand.getIsActive()))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Select an active brand"));
+        Zone zone = new Zone();
+        zone.setZoneName(requireName(zoneName, 100, "Zone name"));
+        zone.setBrand(brand);
+        zoneRepository.save(zone);
+    }
+
+    private static String requireName(String value, int maxLength, String label) {
+        String name = value == null ? "" : value.trim();
+        if (name.isBlank() || name.length() > maxLength) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, label + " must be between 1 and " + maxLength + " characters");
+        }
+        return name;
     }
 
     public List<Invoice> getAllInvoices() { return invoiceRepository.findAll(); }
@@ -600,7 +861,7 @@ class ImsController {
                     """);
             html.append("<header><div><h1>Code-B Internal Management System</h1><small>Signed in as ")
                     .append(escape(authentication.getName())).append(admin ? " · Admin" : " · Employee")
-                    .append("</small></div><form method='post' action='/logout'>").append(csrfField(csrf))
+                    .append("</small></div><nav><a href='/groups'>Customer groups</a> · <a href='/brands'>Manage brands</a></nav><form method='post' action='/logout'>").append(csrfField(csrf))
                     .append("<button class='secondary' type='submit'>Sign out</button></form></header><main>")
                     .append("<div class='stats'><div class='stat'><label>Total clients</label><strong>").append(clients.size())
                     .append("</strong></div><div class='stat'><label>Active users</label><strong>").append(imsService.getActiveUserCount())
@@ -661,13 +922,170 @@ class ImsController {
             return html.append("</main></body></html>").toString();
         }
 
+        @GetMapping("/brands")
+        @ResponseBody
+        public String brandsPage(@RequestParam(required = false) Long groupId,
+                                 @RequestParam(required = false) Long chainId,
+                                 @RequestParam(required = false) String success,
+                                 @RequestParam(required = false) String error,
+                                 CsrfToken csrf) {
+            List<CustomerGroup> groups = imsService.getAllGroups();
+            List<CompanyChain> chains = groupId == null
+                    ? imsService.getAllActiveChains()
+                    : imsService.getActiveChainsByGroup(groupId);
+            List<Brand> brands = imsService.getActiveBrands(groupId, chainId);
+            List<Brand> activeBrands = imsService.getActiveBrands(null, null);
+            List<CompanyChain> allActiveChains = imsService.getAllActiveChains();
+            List<Zone> zones = imsService.getAllZones();
+            StringBuilder html = new StringBuilder("""
+                    <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+                    <title>Manage Brands · Code-B IMS</title><style>
+                    *{box-sizing:border-box}body{margin:0;background:#f3f6f2;color:#17211d;font:15px/1.5 'Segoe UI',sans-serif}
+                    main{max-width:1120px;margin:32px auto;padding:0 20px}header{background:#17211d;color:#fff;padding:16px max(20px,calc((100% - 1080px)/2))}
+                    header a{color:#d8f36a;text-decoration:none}header h1{font-size:22px;margin:0}header nav{margin-top:8px}
+                    section{background:white;border:1px solid #dce4de;padding:18px;margin:18px 0}h2{font-size:18px;margin:0 0 12px}
+                    form.row{display:flex;flex-wrap:wrap;gap:9px;margin:0 0 12px}input,select,button{font:inherit;padding:9px 11px;border:1px solid #c7d2ca;border-radius:4px}
+                    input,select{min-width:160px;flex:1;background:#fff;color:#17211d}button{background:#176b4b;border-color:#176b4b;color:white;cursor:pointer;font-weight:600}
+                    button.secondary{background:white;color:#17211d}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:720px}
+                    th,td{text-align:left;padding:10px 12px;border-bottom:1px solid #dce4de;vertical-align:middle}th{font-size:12px;text-transform:uppercase;color:#65736c;background:#f8faf8}
+                    td input,td select{min-width:120px;padding:7px}.actions{display:flex;gap:7px}.actions form{margin:0}
+                    .notice{padding:10px 12px;margin:12px 0;border-radius:4px}.success{background:#dff0d8;color:#27632d}.error{background:#f2dede;color:#8a2525}
+                    .muted{color:#65736c}a{color:#176b4b}@media(max-width:650px){main{margin:18px auto;padding:0 12px}section{padding:13px}}
+                    </style></head><body><header><h1>Manage Brands</h1><nav><a href="/">Dashboard</a> · <a href="/groups">Customer groups</a></nav></header><main>
+                    """);
+            if ("brand-added".equals(success)) html.append("<p class='notice success'>Brand added successfully.</p>");
+            if ("brand-updated".equals(success)) html.append("<p class='notice success'>Brand updated successfully.</p>");
+            if ("brand-deleted".equals(success)) html.append("<p class='notice success'>Brand deactivated successfully.</p>");
+            if ("chain-added".equals(success)) html.append("<p class='notice success'>Company added successfully.</p>");
+            if ("zone-added".equals(success)) html.append("<p class='notice success'>Zone linked to brand successfully.</p>");
+            if ("brand-linked".equals(error)) html.append("<p class='notice error'>This brand is linked to one or more zones and cannot be deactivated.</p>");
+
+            html.append("<section><h2>Add company / chain</h2>");
+            if (groups.isEmpty()) {
+                html.append("<p class='muted'>Add an active customer group before adding a company. <a href='/groups'>Manage groups</a></p>");
+            } else {
+                html.append("<form class='row' action='/brands/chains/add' method='post'>").append(csrfField(csrf))
+                        .append("<select name='groupId' required aria-label='Customer group'>");
+                appendGroupOptions(html, groups, null);
+                html.append("</select><input name='chainName' maxlength='50' placeholder='Company / chain name' required>")
+                        .append("<button type='submit'>Add company</button></form>");
+            }
+            html.append("</section><section><h2>Add brand</h2>");
+            if (chains.isEmpty()) {
+                html.append("<p class='muted'>Add an active company / chain first.</p>");
+            } else {
+                html.append("<form class='row' action='/brands/add' method='post'>").append(csrfField(csrf))
+                        .append("<input name='brandName' maxlength='50' placeholder='Brand name' required><select name='chainId' required aria-label='Company / chain'>");
+                appendChainOptions(html, chains, null);
+                html.append("</select><button type='submit'>Add brand</button></form>");
+            }
+            html.append("</section><section><h2>Filter brands</h2><form class='row' method='get' action='/brands'>")
+                    .append("<select name='groupId' aria-label='Filter by group' onchange='this.form.submit()'><option value=''>All groups</option>");
+            appendGroupOptions(html, groups, groupId);
+            html.append("</select><select name='chainId' aria-label='Filter by company'><option value=''>All companies</option>");
+            appendChainOptions(html, chains, chainId);
+            html.append("</select><button type='submit'>Filter</button><a href='/brands'>Clear filters</a></form>");
+            for (Brand brand : brands) {
+                html.append("<form id='brand-edit-").append(brand.getBrandId()).append("' method='post' action='/brands/")
+                        .append(brand.getBrandId()).append("/edit'>").append(csrfField(csrf)).append("</form>");
+            }
+            html.append("<div class='table-wrap'><table><thead><tr><th>Sr. No.</th><th>Group</th><th>Company</th><th>Brand</th><th>Actions</th></tr></thead><tbody>");
+            int row = 1;
+            for (Brand brand : brands) {
+                String formId = "brand-edit-" + brand.getBrandId();
+                html.append("<tr><td>").append(row++).append("</td><td>")
+                        .append(escape(brand.getChain().getGroup().getGroupName())).append("</td><td>")
+                        .append(escape(brand.getChain().getChainName())).append("</td><td><input form='")
+                        .append(formId).append("' name='brandName' maxlength='50' value='")
+                        .append(escape(brand.getBrandName())).append("' required></td><td><div class='actions'><select form='")
+                        .append(formId).append("' name='chainId' required aria-label='Company / chain'>");
+                appendChainOptions(html, allActiveChains, brand.getChain().getChainId());
+                html.append("</select><button form='").append(formId).append("' type='submit'>Save</button>")
+                        .append("<form method='post' action='/brands/").append(brand.getBrandId()).append("/delete'>")
+                        .append(csrfField(csrf)).append("<button class='secondary' type='submit' onclick=\"return confirm('Deactivate this brand?')\">Delete</button></form>")
+                        .append("</div></td></tr>");
+            }
+            if (brands.isEmpty()) html.append("<tr><td colspan='5' class='muted'>No active brands match these filters.</td></tr>");
+            html.append("</tbody></table></div></section><section><h2>Zones linked to brands</h2>");
+            if (activeBrands.isEmpty()) {
+                html.append("<p class='muted'>Add a brand before linking zones.</p>");
+            } else {
+                html.append("<form class='row' action='/brands/zones/add' method='post'>").append(csrfField(csrf))
+                        .append("<input name='zoneName' maxlength='100' placeholder='Zone name' required><select name='brandId' required aria-label='Brand'>");
+                for (Brand activeBrand : activeBrands) {
+                    html.append("<option value='").append(activeBrand.getBrandId()).append("'>")
+                            .append(escape(activeBrand.getBrandName())).append(" — ")
+                            .append(escape(activeBrand.getChain().getChainName())).append("</option>");
+                }
+                html.append("</select><button type='submit'>Link zone</button></form>");
+            }
+            html.append("<div class='table-wrap'><table><thead><tr><th>Zone ID</th><th>Zone</th><th>Group</th><th>Company</th><th>Brand</th></tr></thead><tbody>");
+            for (Zone zone : zones) {
+                html.append("<tr><td>").append(zone.getZoneId()).append("</td><td>").append(escape(zone.getZoneName()))
+                        .append("</td><td>").append(escape(zone.getBrand().getChain().getGroup().getGroupName()))
+                        .append("</td><td>").append(escape(zone.getBrand().getChain().getChainName()))
+                        .append("</td><td>").append(escape(zone.getBrand().getBrandName())).append("</td></tr>");
+            }
+            if (zones.isEmpty()) html.append("<tr><td colspan='5' class='muted'>No zones have been linked yet.</td></tr>");
+            html.append("</tbody></table></div></section></main></body></html>");
+            return html.toString();
+        }
+
+        @PostMapping("/brands/chains/add")
+        public String addCompanyChain(@RequestParam Long groupId, @RequestParam String chainName) {
+            imsService.createChain(groupId, chainName);
+            return "redirect:/brands?success=chain-added";
+        }
+
+        @PostMapping("/brands/add")
+        public String addBrand(@RequestParam String brandName, @RequestParam Long chainId) {
+            imsService.createBrand(brandName, chainId);
+            return "redirect:/brands?success=brand-added";
+        }
+
+        @PostMapping("/brands/zones/add")
+        public String addZone(@RequestParam String zoneName, @RequestParam Long brandId) {
+            imsService.createZone(zoneName, brandId);
+            return "redirect:/brands?success=zone-added";
+        }
+
+        @PostMapping("/brands/{id}/edit")
+        public String editBrand(@PathVariable Long id, @RequestParam String brandName, @RequestParam Long chainId) {
+            imsService.updateBrand(id, brandName, chainId);
+            return "redirect:/brands?success=brand-updated";
+        }
+
+        @PostMapping("/brands/{id}/delete")
+        public String deleteBrand(@PathVariable Long id) {
+            return imsService.deactivateBrand(id)
+                    ? "redirect:/brands?success=brand-deleted"
+                    : "redirect:/brands?error=brand-linked";
+        }
+
+        private static void appendGroupOptions(StringBuilder html, List<CustomerGroup> groups, Long selectedId) {
+            for (CustomerGroup group : groups) {
+                html.append("<option value='").append(group.getGroupId()).append("'")
+                        .append(group.getGroupId().equals(selectedId) ? " selected" : "").append(">")
+                        .append(escape(group.getGroupName())).append("</option>");
+            }
+        }
+
+        private static void appendChainOptions(StringBuilder html, List<CompanyChain> chains, Long selectedId) {
+            for (CompanyChain chain : chains) {
+                html.append("<option value='").append(chain.getChainId()).append("'")
+                        .append(chain.getChainId().equals(selectedId) ? " selected" : "").append(">")
+                        .append(escape(chain.getChainName())).append(" — ")
+                        .append(escape(chain.getGroup().getGroupName())).append("</option>");
+            }
+        }
+
         @GetMapping("/groups")
         @ResponseBody
         public String groupsPage(Authentication authentication, CsrfToken csrf) {
             List<CustomerGroup> groups = imsService.getAllGroups();
             StringBuilder html = new StringBuilder("<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Groups · Code-B IMS</title><style>body{margin:0;background:#f3f6f2;color:#17211d;font:15px 'Segoe UI',sans-serif}main{max-width:900px;margin:40px auto;padding:0 20px}h1{margin:0 0 20px}form{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px}input,button{font:inherit;padding:10px 12px;border:1px solid #c7d2ca;border-radius:4px}input{flex:1;min-width:180px}button{background:#176b4b;border-color:#176b4b;color:#fff;cursor:pointer}a{color:#176b4b;text-decoration:none}table{width:100%;border-collapse:collapse;background:white;border:1px solid #dce4de}th,td{text-align:left;padding:10px 12px;border-bottom:1px solid #dce4de}button.secondary{background:white;color:#17211d}.alert{padding:10px 12px;margin:10px 0;border-radius:4px} .success{background:#dff0d8;color:#3c763d}.error{background:#f2dede;color:#a94442}</style></head><body><main>");
             html.append("<h1>Customer groups</h1>");
-            html.append("<p><a href='/'>Back to dashboard</a></p>")
+            html.append("<p><a href='/'>Back to dashboard</a> · <a href='/brands'>Manage brands</a></p>")
                     .append("<form action='/groups/add' method='post'>").append(csrfField(csrf))
                     .append("<input name='groupName' placeholder='Enter group name' required>")
                     .append("<button type='submit'>Add group</button></form>");
