@@ -16,6 +16,10 @@ The IMS app uses port 8080 and its local SQLite database is kept in `IMS/ims.db`
 
 After signing in to IMS, use **Manage brands** from the dashboard or open `/brands`. Add companies/chains under active customer groups, then create and edit brands linked by chain ID. The page filters active brands by group or company. Zones can be linked to brands; a brand with one or more linked zones cannot be deactivated. Brand records use soft deletion and keep creation/update timestamps.
 
+### Task 5: Manage Zones
+
+After signing in to IMS, use **Manage zones** from the dashboard or open `/zones`. The zone dashboard shows active group, company/chain, brand, and zone counts; supports filtering by group, company, or brand; and provides add, edit, and soft-delete actions for zones. Each zone is linked to a brand and stores creation/update timestamps.
+
 ## Task 2: Group Management
 
 From the `Task 2` directory, run:

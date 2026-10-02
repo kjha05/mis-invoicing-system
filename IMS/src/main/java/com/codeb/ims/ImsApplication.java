@@ -277,18 +277,42 @@ class Zone {
     @Column(name = "zone_id")
     private Long zoneId;
 
-    @Column(name = "zone_name", nullable = false, length = 100)
+    @Column(name = "zone_name", nullable = false, length = 50)
     private String zoneName;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "brand_id", nullable = false)
     private Brand brand;
 
+    @Column(name = "is_active", nullable = false, columnDefinition = "boolean not null default 1")
+    private Boolean isActive = true;
+
+    @Column(name = "created_at", nullable = false, updatable = false, columnDefinition = "datetime default CURRENT_TIMESTAMP")
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false, columnDefinition = "datetime default CURRENT_TIMESTAMP")
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        LocalDateTime now = LocalDateTime.now();
+        if (this.createdAt == null) this.createdAt = now;
+        this.updatedAt = now;
+        if (this.isActive == null) this.isActive = true;
+    }
+
+    @PreUpdate
+    protected void onUpdate() { this.updatedAt = LocalDateTime.now(); }
+
     public Long getZoneId() { return zoneId; }
     public String getZoneName() { return zoneName; }
     public void setZoneName(String zoneName) { this.zoneName = zoneName; }
     public Brand getBrand() { return brand; }
     public void setBrand(Brand brand) { this.brand = brand; }
+    public Boolean getIsActive() { return isActive; }
+    public void setIsActive(Boolean isActive) { this.isActive = isActive; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
 }
 
 @Entity
@@ -401,6 +425,7 @@ interface HierarchyRepository extends JpaRepository<Hierarchy, Long> {}
 
 interface GroupRepository extends JpaRepository<CustomerGroup, Long> {
     List<CustomerGroup> findByIsActiveTrue();
+    long countByIsActiveTrue();
     Optional<CustomerGroup> findByGroupNameIgnoreCase(String groupName);
 }
 
@@ -413,6 +438,8 @@ interface CompanyChainRepository extends JpaRepository<CompanyChain, Long> {
             order by c.chainName
             """)
     List<CompanyChain> findActiveChains(@Param("groupId") Long groupId);
+    @Query("select count(c) from CompanyChain c join c.group g where c.isActive = true and g.isActive = true")
+    long countActiveChains();
     boolean existsByGroup_GroupIdAndChainNameIgnoreCase(Long groupId, String chainName);
 }
 
@@ -427,6 +454,13 @@ interface BrandRepository extends JpaRepository<Brand, Long> {
             order by g.groupName, c.chainName, b.brandName
             """)
     List<Brand> findActiveBrands(@Param("groupId") Long groupId, @Param("chainId") Long chainId);
+    @Query("""
+            select count(b) from Brand b
+            join b.chain c
+            join c.group g
+            where b.isActive = true and c.isActive = true and g.isActive = true
+            """)
+    long countActiveBrands();
     boolean existsByChain_ChainIdAndBrandNameIgnoreCase(Long chainId, String brandName);
     boolean existsByChain_ChainIdAndBrandNameIgnoreCaseAndBrandIdNot(Long chainId, String brandName, Long brandId);
 }
@@ -434,13 +468,27 @@ interface BrandRepository extends JpaRepository<Brand, Long> {
 interface ZoneRepository extends JpaRepository<Zone, Long> {
     long countByBrand_BrandId(Long brandId);
     @Query("""
+            select count(z) from Zone z
+            join z.brand b
+            join b.chain c
+            join c.group g
+            where z.isActive = true and b.isActive = true and c.isActive = true and g.isActive = true
+            """)
+    long countActiveZones();
+    @Query("""
             select z from Zone z
             join fetch z.brand b
             join fetch b.chain c
-            join fetch c.group
+            join fetch c.group g
+            where z.isActive = true and b.isActive = true and c.isActive = true and g.isActive = true
+              and (:brandId is null or b.brandId = :brandId)
+              and (:chainId is null or c.chainId = :chainId)
+              and (:groupId is null or g.groupId = :groupId)
             order by z.zoneName
             """)
-    List<Zone> findAllWithBrand();
+    List<Zone> findActiveZones(@Param("brandId") Long brandId,
+                               @Param("chainId") Long chainId,
+                               @Param("groupId") Long groupId);
 }
 
 interface InvoiceRepository extends JpaRepository<Invoice, Long> {}
@@ -582,7 +630,36 @@ class ImsService {
     }
 
     public List<Zone> getAllZones() {
-        return zoneRepository.findAllWithBrand();
+        return zoneRepository.findActiveZones(null, null, null);
+    }
+
+    public List<Zone> getActiveZones(Long brandId, Long chainId, Long groupId) {
+        return zoneRepository.findActiveZones(brandId, chainId, groupId);
+    }
+
+    public long getActiveGroupCount() { return groupRepository.countByIsActiveTrue(); }
+    public long getActiveChainCount() { return companyChainRepository.countActiveChains(); }
+    public long getActiveBrandCount() { return brandRepository.countActiveBrands(); }
+    public long getActiveZoneCount() { return zoneRepository.countActiveZones(); }
+
+    @Transactional
+    public void updateZone(Long zoneId, String zoneName, Long brandId) {
+        Zone zone = zoneRepository.findById(zoneId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Zone not found"));
+        Brand brand = brandRepository.findById(brandId)
+                .filter(activeBrand -> Boolean.TRUE.equals(activeBrand.getIsActive()))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Select an active brand"));
+        zone.setZoneName(requireName(zoneName, 50, "Zone name"));
+        zone.setBrand(brand);
+        zoneRepository.save(zone);
+    }
+
+    @Transactional
+    public void deactivateZone(Long zoneId) {
+        Zone zone = zoneRepository.findById(zoneId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Zone not found"));
+        zone.setIsActive(false);
+        zoneRepository.save(zone);
     }
 
     @Transactional
@@ -591,8 +668,9 @@ class ImsService {
                 .filter(activeBrand -> Boolean.TRUE.equals(activeBrand.getIsActive()))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Select an active brand"));
         Zone zone = new Zone();
-        zone.setZoneName(requireName(zoneName, 100, "Zone name"));
+        zone.setZoneName(requireName(zoneName, 50, "Zone name"));
         zone.setBrand(brand);
+        zone.setIsActive(true);
         zoneRepository.save(zone);
     }
 
@@ -861,7 +939,7 @@ class ImsController {
                     """);
             html.append("<header><div><h1>Code-B Internal Management System</h1><small>Signed in as ")
                     .append(escape(authentication.getName())).append(admin ? " · Admin" : " · Employee")
-                    .append("</small></div><nav><a href='/groups'>Customer groups</a> · <a href='/brands'>Manage brands</a></nav><form method='post' action='/logout'>").append(csrfField(csrf))
+                    .append("</small></div><nav><a href='/groups'>Customer groups</a> · <a href='/brands'>Manage brands</a> · <a href='/zones'>Manage zones</a></nav><form method='post' action='/logout'>").append(csrfField(csrf))
                     .append("<button class='secondary' type='submit'>Sign out</button></form></header><main>")
                     .append("<div class='stats'><div class='stat'><label>Total clients</label><strong>").append(clients.size())
                     .append("</strong></div><div class='stat'><label>Active users</label><strong>").append(imsService.getActiveUserCount())
@@ -934,9 +1012,7 @@ class ImsController {
                     ? imsService.getAllActiveChains()
                     : imsService.getActiveChainsByGroup(groupId);
             List<Brand> brands = imsService.getActiveBrands(groupId, chainId);
-            List<Brand> activeBrands = imsService.getActiveBrands(null, null);
             List<CompanyChain> allActiveChains = imsService.getAllActiveChains();
-            List<Zone> zones = imsService.getAllZones();
             StringBuilder html = new StringBuilder("""
                     <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
                     <title>Manage Brands · Code-B IMS</title><style>
@@ -957,7 +1033,6 @@ class ImsController {
             if ("brand-updated".equals(success)) html.append("<p class='notice success'>Brand updated successfully.</p>");
             if ("brand-deleted".equals(success)) html.append("<p class='notice success'>Brand deactivated successfully.</p>");
             if ("chain-added".equals(success)) html.append("<p class='notice success'>Company added successfully.</p>");
-            if ("zone-added".equals(success)) html.append("<p class='notice success'>Zone linked to brand successfully.</p>");
             if ("brand-linked".equals(error)) html.append("<p class='notice error'>This brand is linked to one or more zones and cannot be deactivated.</p>");
 
             html.append("<section><h2>Add company / chain</h2>");
@@ -1006,28 +1081,7 @@ class ImsController {
                         .append("</div></td></tr>");
             }
             if (brands.isEmpty()) html.append("<tr><td colspan='5' class='muted'>No active brands match these filters.</td></tr>");
-            html.append("</tbody></table></div></section><section><h2>Zones linked to brands</h2>");
-            if (activeBrands.isEmpty()) {
-                html.append("<p class='muted'>Add a brand before linking zones.</p>");
-            } else {
-                html.append("<form class='row' action='/brands/zones/add' method='post'>").append(csrfField(csrf))
-                        .append("<input name='zoneName' maxlength='100' placeholder='Zone name' required><select name='brandId' required aria-label='Brand'>");
-                for (Brand activeBrand : activeBrands) {
-                    html.append("<option value='").append(activeBrand.getBrandId()).append("'>")
-                            .append(escape(activeBrand.getBrandName())).append(" — ")
-                            .append(escape(activeBrand.getChain().getChainName())).append("</option>");
-                }
-                html.append("</select><button type='submit'>Link zone</button></form>");
-            }
-            html.append("<div class='table-wrap'><table><thead><tr><th>Zone ID</th><th>Zone</th><th>Group</th><th>Company</th><th>Brand</th></tr></thead><tbody>");
-            for (Zone zone : zones) {
-                html.append("<tr><td>").append(zone.getZoneId()).append("</td><td>").append(escape(zone.getZoneName()))
-                        .append("</td><td>").append(escape(zone.getBrand().getChain().getGroup().getGroupName()))
-                        .append("</td><td>").append(escape(zone.getBrand().getChain().getChainName()))
-                        .append("</td><td>").append(escape(zone.getBrand().getBrandName())).append("</td></tr>");
-            }
-            if (zones.isEmpty()) html.append("<tr><td colspan='5' class='muted'>No zones have been linked yet.</td></tr>");
-            html.append("</tbody></table></div></section></main></body></html>");
+            html.append("</tbody></table></div></section><p><a href='/zones'>Manage zones</a></p></main></body></html>");
             return html.toString();
         }
 
@@ -1043,10 +1097,106 @@ class ImsController {
             return "redirect:/brands?success=brand-added";
         }
 
-        @PostMapping("/brands/zones/add")
+        @GetMapping("/zones")
+        @ResponseBody
+        public String zonesPage(@RequestParam(required = false) Long brandId,
+                                @RequestParam(required = false) Long chainId,
+                                @RequestParam(required = false) Long groupId,
+                                @RequestParam(required = false) String success,
+                                CsrfToken csrf) {
+            List<CustomerGroup> groups = imsService.getAllGroups();
+            List<CompanyChain> chains = imsService.getAllActiveChains();
+            List<Brand> brands = imsService.getActiveBrands(null, null);
+            List<Zone> zones = imsService.getActiveZones(brandId, chainId, groupId);
+
+            StringBuilder html = new StringBuilder("""
+                    <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+                    <title>Manage Zones · Code-B IMS</title><style>
+                    *{box-sizing:border-box}body{margin:0;background:#f3f6f2;color:#17211d;font:15px/1.5 'Segoe UI',sans-serif}
+                    header{background:#17211d;color:white;padding:17px max(20px,calc((100% - 1160px)/2));display:flex;justify-content:space-between;align-items:center;gap:12px}
+                    header h1{font-size:22px;margin:0}header a{color:#d8f36a;text-decoration:none}main{max-width:1160px;margin:28px auto;padding:0 20px}
+                    nav{margin-top:5px}.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}
+                    .metric,section{background:white;border:1px solid #dce4de}.metric{padding:14px 16px}.metric span{display:block;color:#65736c;font-size:13px}.metric strong{font-size:23px}
+                    section{padding:18px;margin:16px 0}h2{font-size:18px;margin:0 0 12px}form.row{display:flex;flex-wrap:wrap;gap:9px;margin:0 0 12px}
+                    input,select,button{font:inherit;padding:9px 11px;border:1px solid #c7d2ca;border-radius:4px}input,select{min-width:155px;flex:1;background:#fff;color:#17211d}
+                    button{background:#176b4b;border-color:#176b4b;color:white;cursor:pointer;font-weight:600}button.secondary{background:white;color:#17211d}
+                    .table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:900px}th,td{text-align:left;padding:10px 12px;border-bottom:1px solid #dce4de;vertical-align:middle}
+                    th{font-size:12px;text-transform:uppercase;color:#65736c;background:#f8faf8}td input,td select{min-width:115px;padding:7px}
+                    .actions{display:flex;gap:7px;align-items:center}.actions form{margin:0}.muted{color:#65736c}.notice{padding:10px 12px;margin:12px 0;border-radius:4px;background:#dff0d8;color:#27632d}
+                    .workspace{display:grid;grid-template-columns:230px minmax(0,1fr);gap:16px;align-items:start}.workspace section{margin:0}.filters select{display:block;width:100%;margin:0 0 10px}.filters button{width:100%;margin:3px 0 10px}.zone-list{min-width:0}
+                    a{color:#176b4b}@media(max-width:800px){.workspace{grid-template-columns:1fr}}@media(max-width:700px){main{margin:18px auto;padding:0 12px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}header{padding:15px;align-items:flex-start;flex-direction:column}section{padding:13px}}
+                    </style></head><body><header><div><h1>Manage Zones</h1><nav><a href="/">Dashboard</a> · <a href="/brands">Manage brands</a> · <a href="/groups">Customer groups</a></nav></div></header><main>
+                    """);
+            if ("zone-added".equals(success)) html.append("<p class='notice'>Zone added successfully.</p>");
+            if ("zone-updated".equals(success)) html.append("<p class='notice'>Zone updated successfully.</p>");
+            if ("zone-deleted".equals(success)) html.append("<p class='notice'>Zone deactivated successfully.</p>");
+
+            html.append("<div class='metrics'><div class='metric'><span>Total groups</span><strong>")
+                    .append(imsService.getActiveGroupCount()).append("</strong></div><div class='metric'><span>Total companies / chains</span><strong>")
+                    .append(imsService.getActiveChainCount()).append("</strong></div><div class='metric'><span>Total brands</span><strong>")
+                    .append(imsService.getActiveBrandCount()).append("</strong></div><div class='metric'><span>Total zones</span><strong>")
+                    .append(imsService.getActiveZoneCount()).append("</strong></div></div>");
+
+            html.append("<section><h2>Add zone</h2>");
+            if (brands.isEmpty()) {
+                html.append("<p class='muted'>Add an active brand before creating a zone. <a href='/brands'>Manage brands</a></p>");
+            } else {
+                html.append("<form class='row' action='/zones/add' method='post'>").append(csrfField(csrf))
+                        .append("<input name='zoneName' maxlength='50' placeholder='Zone name' required>")
+                        .append("<select name='brandId' required aria-label='Brand'>");
+                appendBrandOptions(html, brands, null);
+                html.append("</select><button type='submit'>Add zone</button></form>");
+            }
+            html.append("</section><div class='workspace'><section class='filters'><h2>Filter zones</h2><form method='get' action='/zones'>")
+                    .append("<select name='groupId' aria-label='Filter by group'><option value=''>All groups</option>");
+            appendGroupOptions(html, groups, groupId);
+            html.append("</select><select name='chainId' aria-label='Filter by company'><option value=''>All companies</option>");
+            appendChainOptions(html, chains, chainId);
+            html.append("</select><select name='brandId' aria-label='Filter by brand'><option value=''>All brands</option>");
+            appendBrandOptions(html, brands, brandId);
+            html.append("</select><button type='submit'>Apply filters</button></form><a href='/zones'>Clear filters</a></section><section class='zone-list'><h2>Zones</h2>");
+
+            for (Zone zone : zones) {
+                html.append("<form id='zone-edit-").append(zone.getZoneId()).append("' method='post' action='/zones/")
+                        .append(zone.getZoneId()).append("/edit'>").append(csrfField(csrf)).append("</form>");
+            }
+            html.append("<div class='table-wrap'><table><thead><tr><th>Sr. No.</th><th>Zone</th><th>Brand</th><th>Company</th><th>Group</th><th>Actions</th></tr></thead><tbody>");
+            int row = 1;
+            for (Zone zone : zones) {
+                String formId = "zone-edit-" + zone.getZoneId();
+                html.append("<tr><td>").append(row++).append("</td><td><input form='").append(formId)
+                        .append("' name='zoneName' maxlength='50' value='").append(escape(zone.getZoneName())).append("' required></td><td>")
+                        .append(escape(zone.getBrand().getBrandName())).append("</td><td>")
+                        .append(escape(zone.getBrand().getChain().getChainName())).append("</td><td>")
+                        .append(escape(zone.getBrand().getChain().getGroup().getGroupName())).append("</td><td><div class='actions'><select form='")
+                        .append(formId).append("' name='brandId' required aria-label='Brand'>");
+                appendBrandOptions(html, brands, zone.getBrand().getBrandId());
+                html.append("</select><button form='").append(formId).append("' type='submit'>Edit</button>")
+                        .append("<form method='post' action='/zones/").append(zone.getZoneId()).append("/delete'>")
+                        .append(csrfField(csrf)).append("<button class='secondary' type='submit' onclick=\"return confirm('Deactivate this zone?')\">Delete</button></form>")
+                        .append("</div></td></tr>");
+            }
+            if (zones.isEmpty()) html.append("<tr><td colspan='6' class='muted'>No active zones match these filters.</td></tr>");
+            html.append("</tbody></table></div></section></div></main></body></html>");
+            return html.toString();
+        }
+
+        @PostMapping("/zones/add")
         public String addZone(@RequestParam String zoneName, @RequestParam Long brandId) {
             imsService.createZone(zoneName, brandId);
-            return "redirect:/brands?success=zone-added";
+            return "redirect:/zones?success=zone-added";
+        }
+
+        @PostMapping("/zones/{id}/edit")
+        public String editZone(@PathVariable Long id, @RequestParam String zoneName, @RequestParam Long brandId) {
+            imsService.updateZone(id, zoneName, brandId);
+            return "redirect:/zones?success=zone-updated";
+        }
+
+        @PostMapping("/zones/{id}/delete")
+        public String deleteZone(@PathVariable Long id) {
+            imsService.deactivateZone(id);
+            return "redirect:/zones?success=zone-deleted";
         }
 
         @PostMapping("/brands/{id}/edit")
@@ -1076,6 +1226,16 @@ class ImsController {
                         .append(chain.getChainId().equals(selectedId) ? " selected" : "").append(">")
                         .append(escape(chain.getChainName())).append(" — ")
                         .append(escape(chain.getGroup().getGroupName())).append("</option>");
+            }
+        }
+
+        private static void appendBrandOptions(StringBuilder html, List<Brand> brands, Long selectedId) {
+            for (Brand brand : brands) {
+                html.append("<option value='").append(brand.getBrandId()).append("'")
+                        .append(brand.getBrandId().equals(selectedId) ? " selected" : "").append(">")
+                        .append(escape(brand.getBrandName())).append(" — ")
+                        .append(escape(brand.getChain().getChainName())).append(" — ")
+                        .append(escape(brand.getChain().getGroup().getGroupName())).append("</option>");
             }
         }
 

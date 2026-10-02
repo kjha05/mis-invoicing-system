@@ -86,4 +86,52 @@ class ImsApplicationTests {
 		assertTrue(imsService.getActiveBrands(null, null).stream()
 				.noneMatch(activeBrand -> activeBrand.getBrandId().equals(brand.getBrandId())));
 	}
+
+	@Test
+	@Transactional
+	void zonesCanBeFilteredUpdatedAndSoftDeleted() {
+		String suffix = UUID.randomUUID().toString();
+		CustomerGroup group = new CustomerGroup();
+		group.setGroupName("Zone test group " + suffix);
+		group.setIsActive(true);
+		groupRepository.save(group);
+
+		CompanyChain chain = new CompanyChain();
+		chain.setGroup(group);
+		chain.setChainName("Zone company " + suffix.substring(0, 8));
+		chain.setIsActive(true);
+		companyChainRepository.save(chain);
+
+		Brand brand = new Brand();
+		brand.setBrandName("Zone brand " + suffix.substring(0, 8));
+		brand.setChain(chain);
+		brand.setIsActive(true);
+		brandRepository.save(brand);
+
+		imsService.createZone("Zone one", brand.getBrandId());
+		Zone zone = imsService.getActiveZones(brand.getBrandId(), chain.getChainId(), group.getGroupId())
+				.get(0);
+		assertTrue(zone.getIsActive());
+		assertTrue(zone.getCreatedAt() != null);
+		assertTrue(zone.getUpdatedAt() != null);
+		String page = imsController.zonesPage(brand.getBrandId(), chain.getChainId(), group.getGroupId(), null,
+				new DefaultCsrfToken("X-CSRF-TOKEN", "_csrf", "test-token"));
+		assertTrue(page.contains("Total groups"));
+		assertTrue(page.contains("Total companies / chains"));
+		assertTrue(page.contains("Total brands"));
+		assertTrue(page.contains("Total zones"));
+		assertTrue(page.contains("Filter zones"));
+		assertTrue(page.contains("Zone one"));
+		assertTrue(page.contains(group.getGroupName()));
+
+		imsService.updateZone(zone.getZoneId(), "Renamed zone", brand.getBrandId());
+		assertEquals("Renamed zone", zoneRepository.findById(zone.getZoneId()).orElseThrow().getZoneName());
+		assertTrue(imsService.getActiveZones(brand.getBrandId(), null, null).stream()
+				.anyMatch(activeZone -> activeZone.getZoneId().equals(zone.getZoneId())));
+
+		imsService.deactivateZone(zone.getZoneId());
+		assertFalse(zoneRepository.findById(zone.getZoneId()).orElseThrow().getIsActive());
+		assertTrue(imsService.getActiveZones(null, null, null).stream()
+				.noneMatch(activeZone -> activeZone.getZoneId().equals(zone.getZoneId())));
+	}
 }
