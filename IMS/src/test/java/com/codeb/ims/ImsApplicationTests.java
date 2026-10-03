@@ -6,13 +6,17 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.web.csrf.DefaultCsrfToken;
 import org.springframework.web.server.ResponseStatusException;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -42,6 +46,15 @@ class ImsApplicationTests {
 
 	@Autowired
 	private ImsController imsController;
+
+	@Autowired
+	private InvoiceManagementService invoiceManagementService;
+
+	@Autowired
+	private InvoicePdfService invoicePdfService;
+
+	@Autowired
+	private InvoiceManagementController invoiceManagementController;
 
 	@Test
 	void contextLoads() {
@@ -193,8 +206,10 @@ class ImsApplicationTests {
 		assertEquals(LocalDate.of(2026, 12, 15), saved.getDeliveryDate());
 		assertTrue(saved.getCreatedAt() != null);
 		assertTrue(saved.getUpdatedAt() != null);
-		assertTrue(imsController.salesEstimatesPage(null,
-				new DefaultCsrfToken("X-CSRF-TOKEN", "_csrf", "test-token")).contains("Installation service"));
+		String estimatesPage = imsController.salesEstimatesPage(null,
+				new DefaultCsrfToken("X-CSRF-TOKEN", "_csrf", "test-token"));
+		assertTrue(estimatesPage.contains("Installation service"));
+		assertTrue(estimatesPage.contains("Generate"));
 
 		CompanyChain otherChain = new CompanyChain();
 		otherChain.setGroup(group);
@@ -204,5 +219,75 @@ class ImsApplicationTests {
 		assertThrows(ResponseStatusException.class, () -> imsService.createSalesEstimate(client.getId(),
 				otherChain.getChainId(), zone.getZoneId(), "Invalid hierarchy", 1,
 				BigDecimal.ONE, LocalDate.of(2026, 12, 15), "Must be rejected"));
+	}
+
+	@Test
+	@Transactional
+	void invoicesCopyEstimateDataAndSupportSearchPaymentPdfAndDeletion() throws IOException {
+		String suffix = UUID.randomUUID().toString().substring(0, 8);
+		CustomerGroup group = new CustomerGroup();
+		group.setGroupName("Invoice group " + suffix);
+		group.setIsActive(true);
+		groupRepository.save(group);
+
+		CompanyChain chain = new CompanyChain();
+		chain.setGroup(group);
+		chain.setChainName("Invoice company " + suffix);
+		chain.setIsActive(true);
+		companyChainRepository.save(chain);
+
+		Brand brand = new Brand();
+		brand.setBrandName("Invoice brand " + suffix);
+		brand.setChain(chain);
+		brand.setIsActive(true);
+		brandRepository.save(brand);
+
+		Zone zone = new Zone();
+		zone.setZoneName("Invoice zone " + suffix);
+		zone.setBrand(brand);
+		zone.setIsActive(true);
+		zoneRepository.save(zone);
+
+		Client client = new Client();
+		client.setName("Invoice client " + suffix);
+		client.setCompany("Invoice customer company " + suffix);
+		client.setEmail("invoice-" + suffix + "@example.com");
+		clientRepository.save(client);
+
+		SalesEstimate estimate = imsService.createSalesEstimate(client.getId(), chain.getChainId(),
+				zone.getZoneId(), "Invoice service " + suffix, 2, new BigDecimal("75.25"),
+				LocalDate.of(2026, 12, 20), "Invoice delivery " + suffix);
+
+		Invoice draft = invoiceManagementService.createDraft(estimate.getEstimatedId());
+		assertTrue(draft.getInvoiceNo() >= 1000 && draft.getInvoiceNo() <= 9999);
+		Invoice anotherDraft = invoiceManagementService.createDraft(estimate.getEstimatedId());
+		assertNotEquals(draft.getInvoiceNo(), anotherDraft.getInvoiceNo());
+		invoiceManagementService.deleteInvoice(anotherDraft.getId());
+		assertEquals(estimate.getEstimatedId(), draft.getSalesEstimate().getEstimatedId());
+		assertEquals(chain.getChainId(), draft.getChain().getChainId());
+		assertEquals("Invoice service " + suffix, draft.getServiceDetails());
+		assertEquals(new BigDecimal("150.50"), draft.getAmountPayable());
+		assertEquals(new BigDecimal("150.50"), draft.getBalance());
+		assertEquals(null, draft.getDateOfPayment());
+		assertEquals(1, invoiceManagementService.findInvoices(draft.getInvoiceNo().toString()).size());
+		assertEquals(1, invoiceManagementService.findInvoices(chain.getChainId().toString()).size());
+		assertEquals(1, invoiceManagementService.findInvoices("Invoice customer company " + suffix).size());
+		assertTrue(invoiceManagementController.reviewInvoice(draft.getId(),
+				new DefaultCsrfToken("X-CSRF-TOKEN", "_csrf", "test-token")).contains("Record payment"));
+
+		Invoice paid = invoiceManagementService.recordPayment(draft.getId(), "paid-" + suffix + "@example.com");
+		assertEquals(LocalDate.now(), paid.getDateOfPayment());
+		assertEquals(BigDecimal.ZERO.setScale(2), paid.getBalance());
+		byte[] pdf = invoicePdfService.createPdf(paid);
+		assertTrue(new String(pdf, java.nio.charset.StandardCharsets.ISO_8859_1).startsWith("%PDF-"));
+		try (PDDocument document = PDDocument.load(pdf)) {
+			assertTrue(new PDFTextStripper().getText(document).contains("Invoice number: " + draft.getInvoiceNo()));
+		}
+
+		invoiceManagementService.updateEmail(draft.getId(), "updated-" + suffix + "@example.com");
+		assertEquals("updated-" + suffix + "@example.com",
+				invoiceManagementService.findInvoice(draft.getId()).getEmailId());
+		invoiceManagementService.deleteInvoice(draft.getId());
+		assertTrue(invoiceManagementService.findInvoices(draft.getInvoiceNo().toString()).isEmpty());
 	}
 }

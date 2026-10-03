@@ -24,6 +24,14 @@ After signing in to IMS, use **Manage zones** from the dashboard or open `/zones
 
 After signing in to IMS, open **Sales estimates** from the dashboard or visit `/sales-estimates`. Create estimates for an existing client, company/chain, and zone with service details, quantity, unit cost, and delivery schedule. The estimate stores the selected hierarchy names, links to the client and chain, calculates total cost, and shows estimates with creation/update timestamps.
 
+### Task 7: Invoice Management
+
+From **Sales estimates**, select **Generate** on an estimate to create a four-digit invoice draft using its saved customer, chain, service, quantity, pricing, and delivery details. Confirm that payment has been received and enter the email address to issue the invoice; the app records the payment date, sets the balance to zero, generates a PDF, and emails it. There is no payment gateway integration: payment must be received and verified outside the app before confirming. **Manage invoices** lists invoices, searches by invoice number, estimate ID, chain ID, customer, or company, and allows changing the destination email, retrying email delivery, downloading the PDF, or deleting an invoice.
+
+Invoices use the existing SQLite `invoices` table, with invoice-specific columns for invoice number, estimate and chain foreign keys, service and financial details, payment/service dates, delivery details, and destination email. Existing non-estimate billing records remain available in the dashboard.
+
+Configure SMTP for invoice delivery in the IMS service environment with `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_SMTP_AUTH`, `MAIL_SMTP_STARTTLS`, and `MAIL_FROM`. When email delivery fails, the saved invoice remains available to download and resend after correcting SMTP configuration. The Render `ims` service deploys from `IMS/`.
+
 ## Task 2: Group Management
 
 From the `Task 2` directory, run:

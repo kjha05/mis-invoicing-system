@@ -12,6 +12,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Index;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
     import org.springframework.boot.CommandLineRunner;
@@ -319,11 +320,35 @@ class Zone {
 }
 
 @Entity
-@Table(name = "invoices")
+@Table(name = "invoices", indexes = @Index(name = "uk_invoices_invoice_no", columnList = "invoice_no", unique = true))
 class Invoice {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+    @Column(name = "invoice_no")
+    private Integer invoiceNo;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "estimated_id")
+    private SalesEstimate salesEstimate;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "chain_id")
+    private CompanyChain chain;
+    @Column(name = "service_details", length = 100)
+    private String serviceDetails;
+    private Integer qty;
+    @Column(name = "cost_per_qty", precision = 12, scale = 2)
+    private BigDecimal costPerQty;
+    @Column(name = "amount_payable", precision = 14, scale = 2)
+    private BigDecimal amountPayable;
+    private BigDecimal balance;
+    @Column(name = "date_of_payment")
+    private LocalDate dateOfPayment;
+    @Column(name = "date_of_service")
+    private LocalDate dateOfService;
+    @Column(name = "delivery_details", length = 100)
+    private String deliveryDetails;
+    @Column(name = "email_id")
+    private String emailId;
     private String clientName;
     private double amount;
         private double gstRate;
@@ -336,6 +361,30 @@ class Invoice {
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
+    public Integer getInvoiceNo() { return invoiceNo; }
+    public void setInvoiceNo(Integer invoiceNo) { this.invoiceNo = invoiceNo; }
+    public SalesEstimate getSalesEstimate() { return salesEstimate; }
+    public void setSalesEstimate(SalesEstimate salesEstimate) { this.salesEstimate = salesEstimate; }
+    public CompanyChain getChain() { return chain; }
+    public void setChain(CompanyChain chain) { this.chain = chain; }
+    public String getServiceDetails() { return serviceDetails; }
+    public void setServiceDetails(String serviceDetails) { this.serviceDetails = serviceDetails; }
+    public Integer getQty() { return qty; }
+    public void setQty(Integer qty) { this.qty = qty; }
+    public BigDecimal getCostPerQty() { return costPerQty; }
+    public void setCostPerQty(BigDecimal costPerQty) { this.costPerQty = costPerQty; }
+    public BigDecimal getAmountPayable() { return amountPayable; }
+    public void setAmountPayable(BigDecimal amountPayable) { this.amountPayable = amountPayable; }
+    public BigDecimal getBalance() { return balance; }
+    public void setBalance(BigDecimal balance) { this.balance = balance; }
+    public LocalDate getDateOfPayment() { return dateOfPayment; }
+    public void setDateOfPayment(LocalDate dateOfPayment) { this.dateOfPayment = dateOfPayment; }
+    public LocalDate getDateOfService() { return dateOfService; }
+    public void setDateOfService(LocalDate dateOfService) { this.dateOfService = dateOfService; }
+    public String getDeliveryDetails() { return deliveryDetails; }
+    public void setDeliveryDetails(String deliveryDetails) { this.deliveryDetails = deliveryDetails; }
+    public String getEmailId() { return emailId; }
+    public void setEmailId(String emailId) { this.emailId = emailId; }
     public String getClientName() { return clientName; }
     public void setClientName(String clientName) { this.clientName = clientName; }
     public double getAmount() { return amount; }
@@ -589,9 +638,40 @@ interface SalesEstimateRepository extends JpaRepository<SalesEstimate, Long> {
             order by estimate.createdAt desc
             """)
     List<SalesEstimate> findAllForDashboard();
+
+    @Query("""
+            select estimate from SalesEstimate estimate
+            join fetch estimate.client
+            join fetch estimate.chain
+            where estimate.estimatedId = :estimatedId
+            """)
+    Optional<SalesEstimate> findForInvoiceById(@Param("estimatedId") Long estimatedId);
 }
 
-interface InvoiceRepository extends JpaRepository<Invoice, Long> {}
+interface InvoiceRepository extends JpaRepository<Invoice, Long> {
+    boolean existsByInvoiceNo(Integer invoiceNo);
+
+    @Query("select invoice from Invoice invoice where invoice.salesEstimate is null order by invoice.id desc")
+    List<Invoice> findLegacyInvoices();
+
+    @Query("""
+            select invoice from Invoice invoice
+            join fetch invoice.salesEstimate estimate
+            join fetch estimate.client
+            join fetch invoice.chain
+            order by invoice.id desc
+            """)
+    List<Invoice> findAllForSalesDashboard();
+
+    @Query("""
+            select invoice from Invoice invoice
+            join fetch invoice.salesEstimate estimate
+            join fetch estimate.client
+            join fetch invoice.chain
+            where invoice.id = :id
+            """)
+    Optional<Invoice> findSalesInvoiceById(@Param("id") Long id);
+}
 
 interface EstimateRepository extends JpaRepository<Estimate, Long> {}
 
@@ -785,7 +865,7 @@ class ImsService {
         return name;
     }
 
-    public List<Invoice> getAllInvoices() { return invoiceRepository.findAll(); }
+    public List<Invoice> getAllInvoices() { return invoiceRepository.findLegacyInvoices(); }
     public void saveInvoice(Invoice invoice) { invoiceRepository.save(invoice); }
 
     public List<Estimate> getAllEstimates() { return estimateRepository.findAll(); }
@@ -1093,7 +1173,7 @@ class ImsController {
                     """);
             html.append("<header><div><h1>Code-B Internal Management System</h1><small>Signed in as ")
                     .append(escape(authentication.getName())).append(admin ? " · Admin" : " · Employee")
-                    .append("</small></div><nav><a href='/groups'>Customer groups</a> · <a href='/brands'>Manage brands</a> · <a href='/zones'>Manage zones</a> · <a href='/sales-estimates'>Sales estimates</a></nav><form method='post' action='/logout'>").append(csrfField(csrf))
+                    .append("</small></div><nav><a href='/groups'>Customer groups</a> · <a href='/brands'>Manage brands</a> · <a href='/zones'>Manage zones</a> · <a href='/sales-estimates'>Sales estimates</a> · <a href='/invoices'>Manage invoices</a></nav><form method='post' action='/logout'>").append(csrfField(csrf))
                     .append("<button class='secondary' type='submit'>Sign out</button></form></header><main>")
                     .append("<div class='stats'><div class='stat'><label>Total clients</label><strong>").append(clients.size())
                     .append("</strong></div><div class='stat'><label>Active users</label><strong>").append(imsService.getActiveUserCount())
@@ -1175,7 +1255,7 @@ class ImsController {
                     table{width:100%;border-collapse:collapse;min-width:1250px}th,td{text-align:left;padding:9px 11px;border-bottom:1px solid #dce4de;vertical-align:top}
                     th{font-size:12px;text-transform:uppercase;color:#65736c;background:#f8faf8}.notice{padding:10px 12px;background:#dff0d8;color:#27632d;border-radius:4px}
                     .muted{color:#65736c}@media(max-width:800px){form.entry{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){form.entry{grid-template-columns:1fr}main{padding:0 12px}header{padding:15px}}
-                    </style></head><body><header><h1>Estimate Management</h1><nav><a href="/">Dashboard</a> · <a href="/brands">Manage brands</a> · <a href="/zones">Manage zones</a></nav></header><main>
+                    </style></head><body><header><h1>Estimate Management</h1><nav><a href="/">Dashboard</a> · <a href="/brands">Manage brands</a> · <a href="/zones">Manage zones</a> · <a href="/invoices">Manage invoices</a></nav></header><main>
                     """);
             if ("estimate-added".equals(success)) html.append("<p class='notice'>Sales estimate saved successfully.</p>");
             html.append("<section><h2>Create sales estimate</h2>");
@@ -1200,7 +1280,7 @@ class ImsController {
             }
             html.append("</section><section><h2>Estimate dashboard</h2><div class='table-wrap'><table><thead><tr>")
                     .append("<th>ID</th><th>Client</th><th>Company</th><th>Group</th><th>Brand</th><th>Zone</th><th>Service</th><th>Qty</th>")
-                    .append("<th>Cost / unit</th><th>Total cost</th><th>Delivery date</th><th>Delivery details</th><th>Created</th><th>Updated</th>")
+                    .append("                    <th>Cost / unit</th><th>Total cost</th><th>Delivery date</th><th>Delivery details</th><th>Created</th><th>Updated</th><th>Invoice</th>")
                     .append("</tr></thead><tbody>");
             for (SalesEstimate estimate : estimates) {
                 html.append("<tr><td>").append(estimate.getEstimatedId()).append("</td><td>")
@@ -1215,9 +1295,12 @@ class ImsController {
                         .append("</td><td>").append(estimate.getDeliveryDate())
                         .append("</td><td>").append(escape(estimate.getDeliveryDetails()))
                         .append("</td><td>").append(estimate.getCreatedAt())
-                        .append("</td><td>").append(estimate.getUpdatedAt()).append("</td></tr>");
+                        .append("</td><td>").append(estimate.getUpdatedAt())
+                        .append("</td><td><form method='post' action='/sales-estimates/").append(estimate.getEstimatedId())
+                        .append("/invoices'>").append(csrfField(csrf))
+                        .append("<button type='submit'>Generate</button></form></td></tr>");
             }
-            if (estimates.isEmpty()) html.append("<tr><td colspan='14' class='muted'>No sales estimates have been created yet.</td></tr>");
+            if (estimates.isEmpty()) html.append("<tr><td colspan='15' class='muted'>No sales estimates have been created yet.</td></tr>");
             html.append("</tbody></table></div></section></main></body></html>");
             return html.toString();
         }
